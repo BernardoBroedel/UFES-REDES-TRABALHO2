@@ -503,6 +503,268 @@ Este projeto foi desenvolvido como parte do curso de **Redes de Computadores** d
 
 ---
 
+## 🎯 Principais Escolhas de Implementação
+
+Durante o desenvolvimento deste projeto, várias decisões arquiteturais e técnicas foram tomadas para garantir uma implementação robusta e eficiente. Abaixo estão as principais escolhas:
+
+### 1. **Socket.IO como Abstração sobre WebSockets**
+
+Optamos por utilizar **Socket.IO** ao invés de WebSockets nativos devido a:
+- **Fallback automático**: Se WebSockets não estiverem disponíveis, o sistema automaticamente usa polling HTTP
+- **Reconexão automática**: Gerenciamento transparente de reconexões em caso de queda de conexão
+- **Sistema de eventos nomeados**: Facilita a organização e manutenção do código
+- **Rooms nativas**: Suporte integrado para agrupamento de clientes em salas
+
+### 2. **Estado Gerenciado no Servidor (Single Source of Truth)**
+
+Toda a lógica do jogo e estado das salas é mantida no servidor através de um `Map<string, Room>` em memória:
+- **Validação centralizada**: Movimentos são validados no servidor antes de serem aplicados
+- **Prevenção de trapaça**: Clientes não podem modificar o estado diretamente
+- **Sincronização garantida**: Todos os clientes recebem o mesmo estado através de broadcasts
+- **Consistência**: Impossível ter estados divergentes entre clientes
+
+### 3. **Arquitetura Modular e Separação de Responsabilidades**
+
+O código foi organizado em módulos específicos:
+- **`gameLogic.ts`**: Contém apenas a lógica de verificação de vitória e empate
+- **`roomManager.ts`**: Gerencia criação, atualização e remoção de salas
+- **`socketHandlers.ts`**: Centraliza todos os handlers de eventos Socket.IO
+- **`types.ts`**: Define todas as interfaces TypeScript compartilhadas
+
+Esta separação facilita manutenção, testes e compreensão do código.
+
+### 4. **TypeScript em Todo o Projeto**
+
+TypeScript foi utilizado tanto no servidor quanto no cliente:
+- **Type safety**: Prevenção de erros em tempo de compilação
+- **Autocomplete**: Melhor experiência de desenvolvimento
+- **Documentação implícita**: Tipos servem como documentação do código
+- **Refatoração segura**: Mudanças podem ser feitas com confiança
+
+### 5. **Sistema de Rooms do Socket.IO**
+
+Utilizamos o conceito de **Rooms** para isolar comunicação por sala:
+- Cada sala é um room separado no Socket.IO
+- Broadcasting é feito apenas para jogadores na mesma sala
+- Facilita gerenciamento de múltiplas partidas simultâneas
+- Reduz overhead de comunicação (não precisa filtrar clientes manualmente)
+
+### 6. **Validação de Movimentos no Servidor**
+
+Todas as validações de movimentos são feitas no servidor:
+- Verificação de turno correto
+- Verificação de posição vazia
+- Verificação de jogo não finalizado
+- Prevenção de movimentos duplicados ou inválidos
+
+### 7. **Tratamento de Desconexões com Vitória por W.O.**
+
+Implementamos lógica específica para desconexões:
+- Se um jogador desconectar durante uma partida ativa, o oponente vence automaticamente
+- Mensagem de sistema informa sobre a desconexão
+- Estado da sala é atualizado e broadcastado
+- Salas vazias são automaticamente removidas
+
+### 8. **React Hooks para Gerenciamento de Estado**
+
+No frontend, utilizamos React Hooks modernos:
+- **`useState`**: Para estado local dos componentes
+- **`useEffect`**: Para side effects (conexão Socket.IO, listeners)
+- **`useRef`**: Para referências DOM (scroll do chat)
+- Abordagem funcional e declarativa
+
+### 9. **Base64 para "Criptografia Visual" no Chat**
+
+Mensagens do chat são codificadas em Base64 antes do envio:
+- Demonstração conceitual de codificação (não é criptografia real)
+- Mensagens aparecem codificadas na rede
+- Decodificação automática no cliente
+- Adiciona um elemento visual interessante ao projeto
+
+### 10. **Design Cyberpunk com Tailwind CSS**
+
+Interface moderna com tema cyberpunk:
+- Cores neon (azul, rosa, roxo)
+- Efeitos de sombra e brilho
+- Design responsivo
+- Feedback visual claro para ações do usuário
+
+---
+
+## 🚧 Desafios Enfrentados
+
+Durante o desenvolvimento, enfrentamos diversos desafios técnicos e conceituais:
+
+### 1. **Sincronização de Estado em Tempo Real**
+
+**Desafio**: Garantir que todos os clientes vejam o mesmo estado do jogo simultaneamente.
+
+**Solução**: Implementamos um modelo onde o servidor é a única fonte de verdade. Após cada movimento, o servidor valida, atualiza o estado e faz broadcast para todos os jogadores da sala usando `io.to(roomId).emit()`.
+
+### 2. **Gerenciamento de Múltiplas Salas Simultâneas**
+
+**Desafio**: Permitir que múltiplas partidas ocorram simultaneamente sem interferência entre elas.
+
+**Solução**: Utilizamos o sistema de Rooms do Socket.IO, onde cada sala é um room isolado. O gerenciamento é feito através de um `Map<string, Room>` que mantém todas as salas ativas.
+
+### 3. **Tratamento de Desconexões e Reconexões**
+
+**Desafio**: Lidar com jogadores que desconectam durante uma partida ou que tentam reconectar.
+
+**Solução**: Implementamos handlers específicos para eventos `disconnect` e `leave_room`. Quando um jogador desconecta durante uma partida ativa, o oponente vence por W.O. e o estado é atualizado. Salas vazias são automaticamente removidas.
+
+### 4. **Validação de Movimentos e Prevenção de Trapaça**
+
+**Desafio**: Garantir que jogadores não possam fazer movimentos inválidos ou trapacear.
+
+**Solução**: Toda validação é feita no servidor antes de aplicar qualquer mudança:
+- Verificação se é o turno do jogador
+- Verificação se a posição está vazia
+- Verificação se o jogo não terminou
+- Verificação se o jogador está na sala correta
+
+### 5. **Coordenação de Eventos Socket.IO com React**
+
+**Desafio**: Gerenciar listeners de eventos Socket.IO que precisam ser registrados e removidos corretamente para evitar memory leaks.
+
+**Solução**: Utilizamos `useEffect` com cleanup functions que removem listeners quando componentes são desmontados. Também garantimos que listeners sejam registrados apenas uma vez.
+
+### 6. **Atualização da Lista de Salas em Tempo Real**
+
+**Desafio**: Manter a lista de salas no lobby sempre atualizada quando salas são criadas, preenchidas ou finalizadas.
+
+**Solução**: Implementamos broadcasts globais (`io.emit()`) sempre que o estado das salas muda, garantindo que todos os clientes no lobby recebam atualizações imediatas.
+
+### 7. **Interface Responsiva e Feedback Visual**
+
+**Desafio**: Criar uma interface que seja responsiva e forneça feedback claro sobre o estado do jogo.
+
+**Solução**: Utilizamos Tailwind CSS com design mobile-first, cores e animações que indicam claramente o estado atual (vez do jogador, jogo finalizado, etc.).
+
+### 8. **Type Safety entre Cliente e Servidor**
+
+**Desafio**: Garantir que os tipos TypeScript sejam consistentes entre cliente e servidor.
+
+**Solução**: Criamos arquivos `types.ts` separados em cliente e servidor com interfaces compatíveis. Em um projeto maior, seria ideal ter um pacote compartilhado de tipos.
+
+---
+
+## 🔮 Melhorias Futuras
+
+Este projeto foi desenvolvido como forma de praticar a teoria aprendida em sala, mas há várias melhorias que poderiam ser implementadas para torná-lo mais robusto e completo:
+
+### 1. **Sistema de Reinício de Jogo na Mesma Sala**
+
+**Limitação Atual**: Após um jogo ser finalizado, não é possível iniciar uma nova partida na mesma sala. Os jogadores precisam sair e criar/entrar em uma nova sala.
+
+**Melhoria Proposta**:
+- Adicionar botão "Jogar Novamente" após o fim do jogo
+- Implementar evento `restart_game` que reseta o tabuleiro e alterna os símbolos dos jogadores
+- Manter os mesmos jogadores na sala e permitir múltiplas partidas consecutivas
+
+### 2. **Persistência de Dados**
+
+**Limitação Atual**: Todo o estado é mantido em memória. Se o servidor reiniciar, todas as salas e partidas são perdidas.
+
+**Melhorias Propostas**:
+- Integração com banco de dados (PostgreSQL, MongoDB, ou Redis)
+- Persistência de histórico de partidas
+- Salvar estado de partidas em andamento para recuperação após reinício
+- Sistema de backup automático
+
+### 3. **Sistema de Autenticação e Perfis de Usuário**
+
+**Melhoria Proposta**:
+- Autenticação via JWT ou OAuth
+- Perfis de usuário com estatísticas (vitórias, derrotas, empates)
+- Sistema de ranking/elo
+- Histórico pessoal de partidas
+
+### 4. **Sistema de Temporizador para Jogadas**
+
+**Melhoria Proposta**:
+- Timer por jogada (ex: 30 segundos)
+- Vitória automática se o tempo esgotar
+- Indicador visual de tempo restante
+- Opção de configurar tempo por partida
+
+### 5. **Sistema de Espectadores**
+
+**Melhoria Proposta**:
+- Permitir que usuários assistam partidas sem participar
+- Chat separado para espectadores
+- Limite de espectadores por sala
+- Modo "observador" que não interfere no jogo
+
+### 6. **Melhorias no Sistema de Chat**
+
+**Melhorias Propostas**:
+- Criptografia real (end-to-end encryption)
+- Histórico de mensagens persistido
+- Emojis e formatação de texto
+- Comandos especiais (/help, /stats, etc.)
+- Filtro de palavras ofensivas
+
+### 7. **Sistema de Notificações**
+
+**Melhoria Proposta**:
+- Notificações quando um oponente faz uma jogada
+- Notificações quando alguém entra na sua sala
+- Notificações de convites para partidas
+- Notificações push (se implementado como PWA)
+
+### 8. **Modos de Jogo Adicionais**
+
+**Melhorias Propostas**:
+- Jogo da velha 4x4 ou 5x5
+- Modo torneio
+- Modo contra IA (bot)
+- Modo cooperativo ou por equipes
+
+### 9. **Otimizações de Performance**
+
+**Melhorias Propostas**:
+- Compressão de mensagens WebSocket
+- Rate limiting para prevenir spam
+- Connection pooling
+- Cache de estados frequentes
+- Load balancing para múltiplos servidores
+
+### 10. **Melhorias na Interface do Usuário**
+
+**Melhorias Propostas**:
+- Animações mais suaves para movimentos
+- Efeitos sonoros para jogadas e vitórias
+- Temas personalizáveis (além do cyberpunk)
+- Modo escuro/claro
+- Acessibilidade (suporte a leitores de tela, navegação por teclado)
+
+### 11. **Sistema de Logs e Monitoramento**
+
+**Melhoria Proposta**:
+- Logs estruturados de eventos
+- Dashboard de monitoramento (salas ativas, jogadores online)
+- Métricas de performance
+- Alertas para problemas no servidor
+
+### 12. **Testes Automatizados**
+
+**Melhoria Proposta**:
+- Testes unitários para lógica do jogo
+- Testes de integração para Socket.IO
+- Testes end-to-end para fluxos completos
+- CI/CD pipeline
+
+### 13. **Documentação de API**
+
+**Melhoria Proposta**:
+- Documentação OpenAPI/Swagger para eventos Socket.IO
+- Exemplos de integração
+- Guia de contribuição
+- Documentação de arquitetura detalhada
+
+---
+
 ## 📄 Licença
 
 Este projeto é parte de um trabalho acadêmico da UFES e é destinado exclusivamente para fins educacionais.
@@ -518,4 +780,3 @@ Este projeto é parte de um trabalho acadêmico da UFES e é destinado exclusiva
 - [Documentação Vite](https://vitejs.dev/)
 - [WebSocket Protocol (RFC 6455)](https://tools.ietf.org/html/rfc6455)
 
----
