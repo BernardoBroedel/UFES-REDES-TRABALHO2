@@ -1,0 +1,5 @@
+{
+  "name": "Neon Tic-Tac-Toe Multiplayer",
+  "description": "A real-time multiplayer Tic-Tac-Toe game featuring room management, chat with visual encryption, and instant state synchronization.",
+  "requestFramePermissions": []
+}
