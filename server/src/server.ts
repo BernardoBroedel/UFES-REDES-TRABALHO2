@@ -21,25 +21,6 @@ const io = new Server(httpServer, {
 // Setup Socket.IO handlers
 setupSocketHandlers(io);
 
-// Função para obter o IP IPv4 da rede local (formato 192.168.x.x)
-function getLocalIP(): string | null {
-    const interfaces = networkInterfaces();
-
-    for (const name of Object.keys(interfaces)) {
-        const nets = interfaces[name];
-        if (!nets) continue;
-
-        for (const net of nets) {
-            // Busca apenas IPv4 que não seja loopback
-            if (net.family === 'IPv4' && !net.internal) {
-                return net.address;
-            }
-        }
-    }
-
-    return null;
-}
-
 const PORT = 3001;
 httpServer.listen(PORT, () => {
     console.log('\n' + '='.repeat(80));
