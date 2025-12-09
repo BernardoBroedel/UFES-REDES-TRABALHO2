@@ -1,14 +1,16 @@
 import { Server, Socket } from 'socket.io';
-import { Room, Player } from './types';
+import { Player, Spectator } from './types';
 import { checkWinner } from './gameLogic';
 import {
     getRooms,
     getRoom,
     createRoom,
     addPlayerToRoom,
+    addSpectatorToRoom,
     updateRoom,
     removePlayerFromRoom,
-    findRoomByPlayerId
+    removeSpectatorFromRoom,
+    findParticipationBySocketId
 } from './roomManager';
 
 export function setupSocketHandlers(io: Server): void {
@@ -21,6 +23,7 @@ export function setupSocketHandlers(io: Server): void {
                 id: r.id,
                 name: r.name,
                 playerCount: r.players.length,
+                spectatorCount: r.spectators.length,
                 status: r.winner ? 'Finalizado' : (r.players.length === 2 ? 'Jogando' : 'Esperando')
             }));
             socket.emit('room_list', roomList);
@@ -33,7 +36,11 @@ export function setupSocketHandlers(io: Server): void {
 
             socket.emit('room_joined', newRoom);
             io.emit('room_list', Array.from(getRooms().values()).map(r => ({
-                id: r.id, name: r.name, playerCount: r.players.length, status: 'Esperando'
+                id: r.id,
+                name: r.name,
+                playerCount: r.players.length,
+                spectatorCount: r.spectators.length,
+                status: 'Esperando'
             })));
         });
 
@@ -67,7 +74,40 @@ export function setupSocketHandlers(io: Server): void {
 
             // Notify lobby
             io.emit('room_list', Array.from(getRooms().values()).map(r => ({
-                id: r.id, name: r.name, playerCount: r.players.length, status: r.winner ? 'Finalizado' : 'Jogando'
+                id: r.id,
+                name: r.name,
+                playerCount: r.players.length,
+                spectatorCount: r.spectators.length,
+                status: r.winner ? 'Finalizado' : (r.players.length === 2 ? 'Jogando' : 'Esperando')
+            })));
+        });
+
+        // 3b. Join as Spectator
+        socket.on('join_spectator', ({roomId, nickname}) => {
+            const room = getRoom(roomId);
+            if (!room) return;
+
+            const spectator: Spectator = {
+                id: socket.id,
+                nickname
+            };
+
+            const success = addSpectatorToRoom(roomId, spectator);
+            if (!success) return;
+
+            socket.join(roomId);
+            const updatedRoom = getRoom(roomId)!;
+
+            socket.emit('room_joined', updatedRoom); // Spectator also receives state
+            io.to(roomId).emit('room_update', updatedRoom);
+
+            // Update Lobby
+            io.emit('room_list', Array.from(getRooms().values()).map(r => ({
+                id: r.id,
+                name: r.name,
+                playerCount: r.players.length,
+                spectatorCount: r.spectators.length,
+                status: r.winner ? 'Finalizado' : (r.players.length === 2 ? 'Jogando' : 'Esperando')
             })));
         });
 
@@ -96,15 +136,42 @@ export function setupSocketHandlers(io: Server): void {
             io.to(roomId).emit('room_update', room);
         });
 
+        // 4b. Restart Game (same room)
+        socket.on('restart_game', ({roomId}) => {
+            const room = getRoom(roomId);
+            if (!room) return;
+            if (room.players.length < 2) return; // precisa de dois jogadores
+
+            // Alterna símbolos para equilibrar inícios
+            room.players = room.players.map(p => ({
+                ...p,
+                symbol: p.symbol === 'X' ? 'O' : 'X'
+            }));
+
+            room.board = Array(9).fill(null);
+            room.winner = null;
+            room.turn = 'X';
+
+            updateRoom(roomId, room);
+            io.to(roomId).emit('room_update', room);
+            io.to(roomId).emit('chat_message', {
+                sender: 'System',
+                text: 'Nova partida iniciada na mesma sala.',
+                isSystem: true,
+                timestamp: Date.now()
+            });
+        });
+
         // 5. Chat (Visual Encryption)
         socket.on('send_message', ({roomId, text}) => {
             const room = getRoom(roomId);
             if (!room) return;
-            const player = room.players.find(p => p.id === socket.id);
-            if (!player) return;
+            const participant = room.players.find(p => p.id === socket.id) ||
+                room.spectators.find(s => s.id === socket.id);
+            if (!participant) return;
 
             const msgPayload = {
-                sender: player.nickname,
+                sender: participant.nickname,
                 text, // Already base64 from client
                 timestamp: Date.now()
             };
@@ -113,9 +180,12 @@ export function setupSocketHandlers(io: Server): void {
 
         // 6. Leave Room / Disconnect
         const handleLeave = (socketId: string) => {
-            const room = findRoomByPlayerId(socketId);
+            const participation = findParticipationBySocketId(socketId);
+            if (!participation) return;
 
-            if (room) {
+            const {room, role} = participation;
+
+            if (role === 'player') {
                 const remaining = room.players.find(p => p.id !== socketId);
 
                 // Game Logic: W.O. if playing
@@ -139,15 +209,25 @@ export function setupSocketHandlers(io: Server): void {
                 if (updatedRoom) {
                     io.to(room.id).emit('room_update', updatedRoom);
                 }
+            } else {
+                // Spectator leaving
+                const updatedRoom = removeSpectatorFromRoom(room.id, socketId);
+                socket.leave(room.id);
+                socket.emit('left_room_confirmed');
 
-                // Update Lobby
-                io.emit('room_list', Array.from(getRooms().values()).map(r => ({
-                    id: r.id,
-                    name: r.name,
-                    playerCount: r.players.length,
-                    status: r.winner ? 'Finalizado' : (r.players.length === 2 ? 'Jogando' : 'Esperando')
-                })));
+                if (updatedRoom) {
+                    io.to(room.id).emit('room_update', updatedRoom);
+                }
             }
+
+            // Update Lobby after any leave
+            io.emit('room_list', Array.from(getRooms().values()).map(r => ({
+                id: r.id,
+                name: r.name,
+                playerCount: r.players.length,
+                spectatorCount: r.spectators.length,
+                status: r.winner ? 'Finalizado' : (r.players.length === 2 ? 'Jogando' : 'Esperando')
+            })));
         };
 
         socket.on('leave_room', () => {

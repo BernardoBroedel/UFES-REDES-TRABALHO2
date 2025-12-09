@@ -1,4 +1,4 @@
-import { Room, Player } from './types';
+import { Room, Player, Spectator } from './types';
 
 // --- State ---
 const rooms = new Map<string, Room>();
@@ -18,6 +18,7 @@ export function createRoom(roomName: string, playerId: string, nickname: string)
         id: roomId,
         name: roomName,
         players: [{id: playerId, symbol: 'X', nickname}],
+        spectators: [],
         turn: 'X',
         board: Array(9).fill(null),
         winner: null
@@ -34,6 +35,18 @@ export function addPlayerToRoom(roomId: string, player: Player): boolean {
     }
 
     room.players.push(player);
+    rooms.set(roomId, room);
+    return true;
+}
+
+export function addSpectatorToRoom(roomId: string, spectator: Spectator): boolean {
+    const room = rooms.get(roomId);
+    if (!room) return false;
+
+    // Evita duplicatas
+    if (room.spectators.some(s => s.id === spectator.id)) return true;
+
+    room.spectators.push(spectator);
     rooms.set(roomId, room);
     return true;
 }
@@ -65,10 +78,31 @@ export function removePlayerFromRoom(roomId: string, playerId: string): Room | n
     }
 }
 
+export function removeSpectatorFromRoom(roomId: string, spectatorId: string): Room | null {
+    const room = rooms.get(roomId);
+    if (!room) return null;
+
+    room.spectators = room.spectators.filter(s => s.id !== spectatorId);
+    rooms.set(roomId, room);
+    return room;
+}
+
 export function findRoomByPlayerId(playerId: string): Room | null {
     for (const room of rooms.values()) {
         if (room.players.some(p => p.id === playerId)) {
             return room;
+        }
+    }
+    return null;
+}
+
+export function findParticipationBySocketId(socketId: string): {room: Room; role: 'player' | 'spectator'} | null {
+    for (const room of rooms.values()) {
+        if (room.players.some(p => p.id === socketId)) {
+            return {room, role: 'player'};
+        }
+        if (room.spectators.some(s => s.id === socketId)) {
+            return {room, role: 'spectator'};
         }
     }
     return null;

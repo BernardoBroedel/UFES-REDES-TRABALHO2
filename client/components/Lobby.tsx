@@ -7,6 +7,7 @@ interface RoomSummary {
     id: string;
     name: string;
     playerCount: number;
+    spectatorCount?: number;
     status: string;
 }
 
@@ -45,6 +46,11 @@ export const Lobby: React.FC<LobbyProps> = ({nickname, setNickname}) => {
     const handleJoinRoom = (roomId: string) => {
         if (!nickname) return alert("Por favor, escolha um nome de jogador antes de entrar em uma sala.");
         socket.emit('join_room', {roomId, nickname});
+    };
+
+    const handleWatchRoom = (roomId: string) => {
+        if (!nickname) return alert("Por favor, escolha um nome antes de assistir a uma sala.");
+        socket.emit('join_spectator', {roomId, nickname});
     };
 
     return (
@@ -97,17 +103,28 @@ export const Lobby: React.FC<LobbyProps> = ({nickname, setNickname}) => {
                                      className="flex items-center justify-between bg-slate-900 p-3 rounded-lg border border-slate-700">
                                     <div>
                                         <p className="font-bold text-sm text-slate-200">{room.name}</p>
-                                        <p className="text-xs text-slate-500">{room.playerCount}/2 Jogadores
-                                            • {room.status}</p>
+                                        <p className="text-xs text-slate-500">
+                                            {room.playerCount}/2 Jogadores • {room.spectatorCount ?? 0} Espectadores • {room.status}
+                                        </p>
                                     </div>
-                                    <Button
-                                        variant="outline"
-                                        className="text-xs py-1 px-3"
-                                        onClick={() => handleJoinRoom(room.id)}
-                                        disabled={room.playerCount >= 2 || !nickname}
-                                    >
-                                        {room.playerCount >= 2 ? 'Cheio' : 'Entrar'}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            className="text-xs py-1 px-3"
+                                            onClick={() => handleWatchRoom(room.id)}
+                                            disabled={!nickname}
+                                        >
+                                            Assistir
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            className="text-xs py-1 px-3"
+                                            onClick={() => handleJoinRoom(room.id)}
+                                            disabled={room.playerCount >= 2 || !nickname}
+                                        >
+                                            {room.playerCount >= 2 ? 'Cheio' : 'Entrar'}
+                                        </Button>
+                                    </div>
                                 </div>
                             ))
                         )}

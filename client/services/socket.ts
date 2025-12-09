@@ -2,7 +2,7 @@ import {io, Socket} from 'socket.io-client';
 
 // In a real environment, this would be an env variable. 
 // Creating a robust connection to the backend server.
-const URL = 'http://localhost:3001';
+const URL = 'http://172.21.30.221:3001';
 
 
 export const socket: Socket = io(URL, {

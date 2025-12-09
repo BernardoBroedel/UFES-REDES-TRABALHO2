@@ -53,6 +53,7 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
 
     const handleSquareClick = (index: number) => {
         if (
+            isSpectator ||
             room.board[index] ||
             room.winner ||
             room.players.length < 2 ||
@@ -67,6 +68,11 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
         onLeave();
     };
 
+    const handleRestart = () => {
+        if (isSpectator) return;
+        socket.emit('restart_game', {roomId: room.id});
+    };
+
     const handleSendMessage = (e: React.FormEvent) => {
         e.preventDefault();
         if (!message.trim()) return;
@@ -79,7 +85,8 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
 
     const myPlayer = room.players.find(p => p.id === myPlayerId);
     const opponent = room.players.find(p => p.id !== myPlayerId);
-    const isMyTurn = room.turn === myPlayer?.symbol;
+    const isSpectator = !myPlayer;
+    const isMyTurn = !isSpectator && room.turn === myPlayer?.symbol;
 
     return (
         <div className="w-full max-w-5xl grid lg:grid-cols-3 gap-6">
@@ -88,22 +95,39 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
             <div
                 className="lg:col-span-2 bg-slate-900/80 backdrop-blur-xl p-6 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center justify-center">
 
-                <div className="w-full flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                    <div className="flex items-center gap-3">
-                        <div
-                            className={`px-3 py-1 rounded font-bold ${myPlayer?.symbol === 'X' ? 'bg-neon-blue/20 text-neon-blue' : 'bg-neon-pink/20 text-neon-pink'}`}>
-                            VOCÊ: {myPlayer?.symbol} ({myPlayer?.nickname})
+                <div className="w-full flex flex-col gap-3 mb-6 border-b border-slate-700 pb-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            {isSpectator ? (
+                                <div className="px-3 py-1 rounded font-bold bg-slate-800 text-slate-200 border border-slate-600">
+                                    Modo espectador
+                                </div>
+                            ) : (
+                                <div
+                                    className={`px-3 py-1 rounded font-bold ${myPlayer?.symbol === 'X' ? 'bg-neon-blue/20 text-neon-blue' : 'bg-neon-pink/20 text-neon-pink'}`}>
+                                    VOCÊ: {myPlayer?.symbol} ({myPlayer?.nickname})
+                                </div>
+                            )}
+                        </div>
+                        <div className="text-xl font-black tracking-widest text-slate-500">
+                            VS
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {['X', 'O'].map((symbol) => {
+                                const p = room.players.find(player => player.symbol === symbol);
+                                return (
+                                    <div
+                                        key={symbol}
+                                        className={`px-3 py-1 rounded font-bold ${symbol === 'X' ? 'bg-neon-blue/20 text-neon-blue' : 'bg-neon-pink/20 text-neon-pink'}`}>
+                                        {p ? `${p.nickname} (${symbol})` : `Aguardando ${symbol}`}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-                    <div className="text-xl font-black tracking-widest text-slate-500">
-                        VS
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div
-                            className={`px-3 py-1 rounded font-bold ${opponent ? (opponent.symbol === 'X' ? 'bg-neon-blue/20 text-neon-blue' : 'bg-neon-pink/20 text-neon-pink') : 'bg-slate-800 text-slate-500'}`}>
-                            {opponent ? `${opponent.nickname} (${opponent.symbol})` : 'Esperando por outro jogador...'}
-                        </div>
-                    </div>
+                    {isSpectator && (
+                        <span className="text-xs text-slate-500">Você está assistindo esta sala; jogadas estão desativadas.</span>
+                    )}
                 </div>
 
                 <div className="mb-6">
@@ -112,15 +136,21 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
                             {room.winner === 'DRAW' ? (
                                 <span className="text-yellow-400">EMPATE</span>
                             ) : (
-                                <span className={room.winner === myPlayer?.symbol ? "text-green-400" : "text-red-500"}>
-                   {room.winner === myPlayer?.symbol ? "VOCÊ GANHOU!" : "VOCÊ PERDEU!"}
-                 </span>
+                                <span className={isSpectator ? "text-sky-300" : (room.winner === myPlayer?.symbol ? "text-green-400" : "text-red-500")}>
+                                    {isSpectator
+                                        ? `Vitória de ${room.winner}`
+                                        : room.winner === myPlayer?.symbol ? "VOCÊ GANHOU!" : "VOCÊ PERDEU!"}
+                                </span>
                             )}
                         </div>
                     ) : (
                         <div
                             className={`text-xl font-bold text-center ${isMyTurn ? "text-green-400 animate-pulse" : "text-slate-500"}`}>
-                            {room.players.length < 2 ? "Esperando por jogador..." : (isMyTurn ? "SUA VEZ" : `Vez de ${opponent?.nickname}`)}
+                            {room.players.length < 2
+                                ? "Esperando por jogador..."
+                                : isSpectator
+                                    ? `Assistindo: vez de ${room.turn}`
+                                    : (isMyTurn ? "SUA VEZ" : `Vez de ${opponent?.nickname}`)}
                         </div>
                     )}
                 </div>
@@ -130,7 +160,7 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
                         <button
                             key={idx}
                             onClick={() => handleSquareClick(idx)}
-                            disabled={!!cell || !!room.winner || room.players.length < 2}
+                            disabled={!!cell || !!room.winner || room.players.length < 2 || isSpectator}
                             className={`w-20 h-20 md:w-24 md:h-24 rounded-lg text-4xl md:text-5xl font-black flex items-center justify-center transition-all duration-150 
                 ${!cell && !room.winner && isMyTurn ? "hover:bg-slate-700 cursor-pointer" : "cursor-default"}
                 ${cell === 'X' ? "text-neon-blue drop-shadow-[0_0_10px_rgba(0,243,255,0.5)]" : "text-neon-pink drop-shadow-[0_0_10px_rgba(255,0,255,0.5)]"}
@@ -143,6 +173,16 @@ export const Game: React.FC<GameProps> = ({initialRoom, myPlayerId, onLeave}) =>
                 </div>
 
                 <div className="w-full mt-8 flex justify-end">
+                    {room.winner && (
+                        <Button
+                            variant="outline"
+                            onClick={handleRestart}
+                            className="mr-3"
+                            disabled={isSpectator || room.players.length < 2}
+                        >
+                            Jogar novamente
+                        </Button>
+                    )}
                     <Button variant="danger" onClick={handleLeave}>
                         Deixar sala
                     </Button>
